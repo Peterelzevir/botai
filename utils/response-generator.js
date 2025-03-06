@@ -297,11 +297,15 @@ function selectBestResponse(knowledge, query, context, responseType) {
       }
     });
     
-    // Context match bonus
+    // Context match bonus - FIXED CODE HERE
     if (context && context.length > 0) {
       const lastMessages = context.slice(-3);
       lastMessages.forEach(msg => {
-        if (k.context && Array.isArray(k.context) && k.context.some(c => c.text && c.text.includes(msg.text))) {
+        // Use a separate variable to make the logic more readable
+        const isContextMatch = k.context && 
+                              Array.isArray(k.context) && 
+                              k.context.some(c => c && c.text && c.text.includes(msg.text));
+        if (isContextMatch) {
           score += 0.15;
         }
       });
