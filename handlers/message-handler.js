@@ -36,10 +36,13 @@ function setupMessageHandler(bot) {
       
       const text = ctx.message.text;
       const isGroupChat = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-      const isMentioned = ctx.message.entities?.some(entity => 
+      // Fix: Replacing optional chaining with traditional null check
+      const isMentioned = ctx.message.entities ? ctx.message.entities.some(entity => 
         entity.type === 'mention' && text.slice(entity.offset, entity.offset + entity.length).includes(bot.botInfo.username)
-      );
-      const isReply = ctx.message.reply_to_message?.from.id === bot.botInfo.id;
+      ) : false;
+      // Fix: Replacing optional chaining with traditional null check
+      const isReply = ctx.message.reply_to_message && ctx.message.reply_to_message.from && 
+                      ctx.message.reply_to_message.from.id === bot.botInfo.id;
       const isPrivateChat = ctx.chat.type === 'private';
       
       // Proses admin commands
