@@ -85,7 +85,8 @@ async function handleBotAddedToGroup(ctx, bot) {
   try {
     const groupId = ctx.chat.id.toString();
     const groupTitle = ctx.chat.title || 'Group Chat';
-    const addedBy = ctx.from?.username || ctx.from?.first_name || 'someone';
+    // Fix: Replacing optional chaining with traditional null check
+    const addedBy = ctx.from ? (ctx.from.username || ctx.from.first_name || 'someone') : 'someone';
     
     // Dapatkan jumlah member
     let memberCount = 0;
@@ -140,7 +141,8 @@ async function handleBotRemovedFromGroup(ctx) {
   try {
     const groupId = ctx.chat.id.toString();
     const groupTitle = ctx.chat.title || 'Group Chat';
-    const removedBy = ctx.from?.username || ctx.from?.first_name || 'someone';
+    // Fix: Replacing optional chaining with traditional null check
+    const removedBy = ctx.from ? (ctx.from.username || ctx.from.first_name || 'someone') : 'someone';
     
     // Update status grup di database (bisa tandai sebagai inactive)
     await updateGroupInfo(groupId, {
