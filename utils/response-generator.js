@@ -281,56 +281,70 @@ const fallbackResponses = {
  * @returns {Object} Knowledge entry terbaik
  */
 function selectBestResponse(knowledge, query, context, responseType) {
+  // Validasi input untuk menghindari error
+  if (!Array.isArray(knowledge) || knowledge.length === 0) {
+    return null;
+  }
+  
   // Score setiap knowledge entry
   const scoredKnowledge = knowledge.map(k => {
     let score = k.confidence || 0.5;
     
-    // Hitung keyword match score
-    const queryWords = query.toLowerCase().split(/\s+/);
-    queryWords.forEach(word => {
-      if (k.content && k.content.toLowerCase().includes(word)) {
-        score += 0.05;
-      }
-      
-      if (k.keywords && k.keywords.includes(word)) {
-        score += 0.1;
-      }
-    });
+    // Calculate keyword match score
+    if (query && typeof query === 'string') {
+      const queryWords = query.toLowerCase().split(/\s+/);
+      queryWords.forEach(word => {
+        if (k.content && typeof k.content === 'string' && k.content.toLowerCase().includes(word)) {
+          score += 0.05;
+        }
+        
+        if (Array.isArray(k.keywords) && k.keywords.includes(word)) {
+          score += 0.1;
+        }
+      });
+    }
     
-    // Context match bonus
-    if (context && context.length > 0) {
+    // Context match bonus - with safety checks
+    if (context && Array.isArray(context) && context.length > 0) {
       const lastMessages = context.slice(-3);
       lastMessages.forEach(msg => {
-        if (k.context && Array.isArray(k.context) && k.context.some(c => c.text && c.text.includes(msg.text))) {
-          score += 0.15;
+        if (msg && msg.text && k.context && Array.isArray(k.context)) {
+          // Safely check each context item
+          for (let i = 0; i < k.context.length; i++) {
+            const c = k.context[i];
+            if (c && c.text && typeof c.text === 'string' && c.text.includes(msg.text)) {
+              score += 0.15;
+              break; // Found a match, no need to continue checking
+            }
+          }
         }
       });
     }
     
     // Response type match bonus
-    if (responseType.includes('factual') && !k.isQuestion) {
+    if (responseType === 'factual' && k.isQuestion === false) {
       score += 0.1;
-    } else if (responseType.includes('question') && k.isQuestion) {
+    } else if (responseType === 'question' && k.isQuestion === true) {
       score += 0.1;
-    } else if (responseType.includes('joke') && k.isJoke) {
+    } else if (responseType === 'joke' && k.isJoke === true) {
       score += 0.2;
     }
     
     // Recency bonus
-    if (k.learned) {
+    if (k.learned && k.learned instanceof Date) {
       const ageInDays = (new Date() - new Date(k.learned)) / (1000 * 60 * 60 * 24);
       score += Math.max(0, 0.2 - (ageInDays / 30) * 0.2);
     }
     
     // Prioritaskan jawaban non-pertanyaan untuk pertanyaan
-    if (responseType.includes('question') && k.isQuestion) {
+    if (responseType && responseType.includes('question') && k.isQuestion === true) {
       score -= 0.1;
     }
     
     // Prioritaskan respon dari konteks yang sama (private/group)
-    if (k.sourceType === 'private_chat' && responseType.includes('private')) {
+    if (k.sourceType === 'private_chat' && responseType && responseType.includes('private')) {
       score += 0.05;
-    } else if (k.sourceType === 'group_chat' && responseType.includes('group')) {
+    } else if (k.sourceType === 'group_chat' && responseType && responseType.includes('group')) {
       score += 0.05;
     }
     
@@ -340,7 +354,7 @@ function selectBestResponse(knowledge, query, context, responseType) {
   // Sort by score
   scoredKnowledge.sort((a, b) => b.score - a.score);
   
-  // Return highest scored knowledge entry
+  // Return the highest scored knowledge entry
   return scoredKnowledge.length > 0 ? scoredKnowledge[0].knowledge : null;
 }
 
@@ -354,8 +368,9 @@ function selectBestResponse(knowledge, query, context, responseType) {
  * @returns {string} Respons yang telah diolah
  */
 function createDynamicResponse(knowledge, query, context, responseType, userStyle) {
+  // Safety check
   if (!knowledge || !knowledge.content) {
-    return createFallbackResponse(query, context, responseType.includes('question'), userStyle);
+    return createFallbackResponse(query, context, responseType && responseType.includes('question'), userStyle || 'normal');
   }
   
   const content = knowledge.content;
@@ -376,7 +391,7 @@ function createDynamicResponse(knowledge, query, context, responseType, userStyl
   }
   
   // Tambahkan awareness konteks jika ini percakapan
-  if (context && context.length > 0 && responseType.includes('conversation')) {
+  if (context && Array.isArray(context) && context.length > 0 && responseType && responseType.includes('conversation')) {
     const continuityPhrases = [
       `Soal itu, ${response}`,
       `Kalo ngomongin itu, ${response}`,
@@ -407,16 +422,18 @@ function addNaturalVariations(text, responseType, userStyle) {
   
   // Split teks jadi kalimat
   let sentences = text.split(/(?<=[.!?])\s+/);
-  if (sentences.length === 0) return text;
+  if (!Array.isArray(sentences) || sentences.length === 0) sentences = [text];
   
   // Jika userStyle formal, kurangi efek gaul
   const gaulLevel = userStyle === 'formal' ? 0.2 : (userStyle === 'gaul' ? 0.9 : 0.6);
   
   // Ambil tipe respons dasar (tanpa _private atau _group)
-  const baseResponseType = responseType.split('_')[0];
+  const baseResponseType = responseType ? responseType.split('_')[0] : 'conversation';
   
   // Pilih style random yang sesuai dengan response type
   const styles = responseStyles[baseResponseType] || responseStyles.conversation;
+  if (!Array.isArray(styles) || styles.length === 0) return text; // Safety check
+  
   const selectedStyle = styles[Math.floor(Math.random() * styles.length)];
   
   // Modifikasi teks utama dengan bahasa gaul (jika level gaul tinggi)
@@ -424,6 +441,8 @@ function addNaturalVariations(text, responseType, userStyle) {
   if (Math.random() < gaulLevel) {
     // Replace beberapa kata dengan versi gaul
     for (const [formal, gaulOptions] of Object.entries(gaulDictionary.slang)) {
+      if (!Array.isArray(gaulOptions) || gaulOptions.length === 0) continue; // Safety check
+      
       const regex = new RegExp(`\\b${formal}\\b`, 'gi');
       // Randomly select a gaul version
       if (modifiedText.match(regex) && Math.random() < gaulLevel) {
@@ -435,28 +454,34 @@ function addNaturalVariations(text, responseType, userStyle) {
   
   // Tambahkan akhiran kalimat gaul (40% chance jika level gaul tinggi)
   if (Math.random() < gaulLevel * 0.6) {
-    const ending = gaulDictionary.endingExpressions[Math.floor(Math.random() * gaulDictionary.endingExpressions.length)];
-    modifiedText = modifiedText.replace(/[.!?]$/, '') + ending + '.';
+    const endingExpressions = gaulDictionary.endingExpressions;
+    if (Array.isArray(endingExpressions) && endingExpressions.length > 0) {
+      const ending = endingExpressions[Math.floor(Math.random() * endingExpressions.length)];
+      modifiedText = modifiedText.replace(/[.!?]$/, '') + ending + '.';
+    }
   }
   
   // Tambahkan emoji (60% chance jika level gaul tinggi)
   if (Math.random() < gaulLevel * 0.8) {
-    const emoji = gaulDictionary.emojis[Math.floor(Math.random() * gaulDictionary.emojis.length)];
-    // Posisikan emoji di awal, tengah, atau akhir
-    const position = Math.random();
-    if (position < 0.3) {
-      modifiedText = emoji + ' ' + modifiedText;
-    } else if (position < 0.7) {
-      modifiedText = modifiedText.replace(/[.!?]$/, '') + ' ' + emoji;
-    } else {
-      // Coba posisikan di tengah kalimat
-      const parts = modifiedText.split(' ');
-      if (parts.length > 3) {
-        const middleIndex = Math.floor(parts.length / 2);
-        parts.splice(middleIndex, 0, emoji);
-        modifiedText = parts.join(' ');
+    const emojis = gaulDictionary.emojis;
+    if (Array.isArray(emojis) && emojis.length > 0) {
+      const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+      // Posisikan emoji di awal, tengah, atau akhir
+      const position = Math.random();
+      if (position < 0.3) {
+        modifiedText = emoji + ' ' + modifiedText;
+      } else if (position < 0.7) {
+        modifiedText = modifiedText.replace(/[.!?]$/, '') + ' ' + emoji;
       } else {
-        modifiedText = modifiedText + ' ' + emoji;
+        // Coba posisikan di tengah kalimat
+        const parts = modifiedText.split(' ');
+        if (parts.length > 3) {
+          const middleIndex = Math.floor(parts.length / 2);
+          parts.splice(middleIndex, 0, emoji);
+          modifiedText = parts.join(' ');
+        } else {
+          modifiedText = modifiedText + ' ' + emoji;
+        }
       }
     }
   }
@@ -483,16 +508,20 @@ function createFallbackResponse(query, context, isQuestion, userStyle) {
   let responses;
   if (isQuestion) {
     responses = fallbackResponses.question;
-  } else if (context && context.length > 0) {
+  } else if (context && Array.isArray(context) && context.length > 0) {
     responses = fallbackResponses.conversation;
   } else {
     responses = fallbackResponses.learning;
   }
   
+  if (!Array.isArray(responses) || responses.length === 0) {
+    return "Hmm, menarik. Bisa cerita lebih?";
+  }
+  
   let response = responses[Math.floor(Math.random() * responses.length)];
   
   // Tambahkan emoji (70% chance jika level gaul tinggi)
-  if (Math.random() < gaulLevel * 0.7) {
+  if (Math.random() < gaulLevel * 0.7 && Array.isArray(gaulDictionary.emojis) && gaulDictionary.emojis.length > 0) {
     const emoji = gaulDictionary.emojis[Math.floor(Math.random() * gaulDictionary.emojis.length)];
     // Posisikan emoji di awal atau akhir
     if (Math.random() < 0.5) {
@@ -524,6 +553,10 @@ function createGroupJoinResponse(groupTitle, addedBy) {
     `Heyy! Salam kenal semuanya di ${groupTitle}! ✌️ Gue bot AI yang terus belajar. Kalo mau nanya atau ngobrol, tag gue ya. Let's have fun!`
   ];
   
+  if (!Array.isArray(greetings) || greetings.length === 0) {
+    return `Halo semua! Makasih udah nambahin saya ke grup ini. Saya akan belajar dari percakapan kalian!`;
+  }
+  
   return greetings[Math.floor(Math.random() * greetings.length)];
 }
 
@@ -541,6 +574,10 @@ function createIdentityResponse() {
     
     "Saya adalah AI yang selalu belajar, buatan @hiyaok. Yang membuat saya berbeda adalah kemampuan untuk terus mengembangkan pengetahuan dari setiap interaksi. Senang berkenalan dengan kamu!"
   ];
+  
+  if (!Array.isArray(responses) || responses.length === 0) {
+    return "Saya adalah AI buatan @hiyaok yang belajar dari percakapan.";
+  }
   
   return responses[Math.floor(Math.random() * responses.length)];
 }
