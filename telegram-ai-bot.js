@@ -1073,7 +1073,8 @@ function createFallbackResponse(query, context, isQuestion, userStyle) {
 async function handleBotAddedToGroup(ctx) {
   const groupId = ctx.chat.id.toString();
   const groupTitle = ctx.chat.title || 'Group Chat';
-  const addedBy = ctx.from?.username || ctx.from?.first_name || 'someone';
+  // Fix: Replacing optional chaining with traditional null check
+  const addedBy = ctx.from ? (ctx.from.username || ctx.from.first_name || 'someone') : 'someone';
   
   try {
     // Simpan info grup ke database
@@ -1392,10 +1393,13 @@ bot.on(message('text'), async (ctx) => {
     
     const text = ctx.message.text;
     const isGroupChat = ctx.chat.type === 'group' || ctx.chat.type === 'supergroup';
-    const isMentioned = ctx.message.entities?.some(entity => 
+    // Fix: Replacing optional chaining with traditional null check
+    const isMentioned = ctx.message.entities ? ctx.message.entities.some(entity => 
       entity.type === 'mention' && text.slice(entity.offset, entity.offset + entity.length).includes(bot.botInfo.username)
-    );
-    const isReply = ctx.message.reply_to_message?.from.id === bot.botInfo.id;
+    ) : false;
+    // Fix: Replacing optional chaining with traditional null check
+    const isReply = ctx.message.reply_to_message && ctx.message.reply_to_message.from && 
+                    ctx.message.reply_to_message.from.id === bot.botInfo.id;
     const isPrivateChat = ctx.chat.type === 'private';
     
     // Proses admin commands
